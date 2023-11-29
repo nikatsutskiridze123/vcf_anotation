@@ -18,5 +18,5 @@ In order to run the code, please make sure you have installed **PyVCF** and **re
 
 ## Usage
 
-You can run vcf_test.py using command: **vcf_test.py /path/to/your/vcf/file /path/to/your/output/csv/file**
+You can run vcf_test.py using command: **python vcf_test.py /path/to/your/vcf/file /path/to/your/output/csv/file**
 
