@@ -4,7 +4,7 @@ The script **vcf_test.py** consists of 4 functions. It is able to parse input vc
 
 The second function is **construct_hgvs_notation** which takes chrom, pos, ref and alt information for each variant and returns HGVS notations for different type of mutations. 
 
-The third function **ensemble_request** takes output of vcf_parser iterates through records, constructs hgvs notation for each record and sends a GET request to VEP HGVS endpoint, parses response json and
+The third function **ensemble_request** takes output of vcf_parser iterates through records, constructs hgvs notation for each record and sends a POST request to VEP HGVS endpoint, parses response json and
 updates each record data with gene, variant_effect, minor_allele, minor_allele_frequency, somatic, id fields.
 
 The fourth function **response_json_parser** takes json response as an input and parses it to get specific fields. It is ran in ensemble_request function. 
