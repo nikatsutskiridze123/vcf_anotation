@@ -2,6 +2,7 @@ import vcf
 import requests
 import csv
 import sys
+import json
 
 # Function for parsing vcf file
 def vcf_parser(file_path):
@@ -56,58 +57,91 @@ def construct_hgvs_notation(chrom, pos, ref ,alt):
 
 
 # Function for sending a get request to HGVS endpoint
-def ensemble_request(vcf_data):
-    server = "https://grch37.rest.ensembl.org"
-    # Iterate through every record in vcf_data list and sending get request for fetching info
-    for record_info in vcf_data:
-        hgvs_notation = construct_hgvs_notation(record_info['chrom'], record_info['pos'], record_info['ref'], record_info['alt'])
-        vep_request = requests.get(f'{server}/vep/human/hgvs/{hgvs_notation}', headers={"Content-Type": "application/json"} )
-        if not vep_request.ok:
-            print(f"Failed to retrieve data for {hgvs_notation}")
-            continue
-        decoded = vep_request.json()
-        record_info.update(response_json_parser(decoded))
+# Function for sending a post request to HGVS endpoint in batches
 
+
+# Function for sending a post request to HGVS endpoint in batches
+def ensemble_request(vcf_data, batch_size=300):
+    server = "http://grch37.rest.ensembl.org"
+    endpoint = "/vep/human/hgvs"
+    url = f'{server}{endpoint}'
+    headers = {"Content-Type": "application/json", "Accept": "application/json"}
+
+    # Split data into batches size of 300
+    batches = [vcf_data[i:i + batch_size] for i in range(0, len(vcf_data), batch_size)]
+
+    # Function to send a single batch
+    def send_batch(batch):
+        payload = json.dumps({"hgvs_notations": batch})
+        vep_request = requests.post(url, headers=headers, data=payload)
+        if not vep_request.ok:
+            print("Failed to retrieve data for a batch")
+            return []
+        return vep_request.json()
+
+
+    # Process each batch
+    for batch in batches:
+        hgvs_notations = [construct_hgvs_notation(record['chrom'], record['pos'], record['ref'], record['alt']) for
+                          record in batch]
+        batch_response = send_batch(hgvs_notations)
+
+        for record_info, json_record in zip(batch, batch_response):
+            # Print json_record for debugging
+
+
+            update = response_json_parser(json_record)
+            record_info.update(update)
 
     return vcf_data
 
+
+
+
 # Function for parsing response json
 def response_json_parser(response_json):
-    # Iterate through response json and extract data
-    for json_records in response_json:
-        vep_data = {'gene_name': '',
-                    'variant_effect': '',
-                    'minor_allele': '',
-                    'minor_allele_frequency': '',
-                    'somatic': '',
-                    'id': ''}
-        # Finding transcipts_consequences in records and extracting gene_symbol
-        if 'transcript_consequences' in json_records:
-            for consequence in json_records['transcript_consequences']:
-                if 'gene_symbol' in consequence:
-                    vep_data['gene_name'] = consequence['gene_symbol']
-                    break
-        # Extracting variant effect if exists
-        vep_data['variant_effect'] = json_records.get('most_severe_consequence', '')
-        # Extract minor allele, frequency and ID from colocated variants list
-        if 'colocated_variants' in json_records:
-            for variant in json_records['colocated_variants']:
-                if 'minor_allele' in variant:
-                    vep_data['minor_allele'] = variant['minor_allele']
-                    vep_data['minor_allele_frequency'] = variant.get('minor_allele_freq', '')
+    # Initialize the dictionary with default values
+    vep_data = {
+        'gene_name': '',
+        'variant_effect': '',
+        'minor_allele': '',
+        'minor_allele_frequency': '',
+        'somatic': '',
+        'id': ''
+    }
 
-                is_somatic = variant.get('somatic', False)
-                cosmic_id = variant.get('id', '') if variant.get('id', '').startswith("COS") else None
-                rs_id = variant.get('id', '') if variant.get('id', '').startswith("rs") else None
+    # Check if transcript_consequences is in response_json and process it
+    if 'transcript_consequences' in response_json:
+        for consequence in response_json['transcript_consequences']:
+            if 'gene_symbol' in consequence:
+                vep_data['gene_name'] = consequence['gene_symbol']
+                break
 
-                if is_somatic and cosmic_id:
-                    vep_data['id'] = cosmic_id
-                    vep_data['somatic'] = variant.get('somatic')
-                    break
-                elif not is_somatic and rs_id:
-                    vep_data['id'] = rs_id
-                    break
+    # Extract other fields from response_json
+    vep_data['variant_effect'] = response_json.get('most_severe_consequence', '')
+
+    # Process colocated_variants if it exists
+    if 'colocated_variants' in response_json:
+        for variant in response_json['colocated_variants']:
+            is_somatic = variant.get('somatic', False)
+
+            if 'minor_allele' in variant:
+                vep_data['minor_allele'] = variant['minor_allele']
+                vep_data['minor_allele_frequency'] = variant.get('minor_allele_freq', '')
+
+            # Check if variant is somatic
+            if is_somatic:
+                vep_data['somatic'] = 1
+                if variant.get('id', '').startswith("COS"):
+                    vep_data['id'] = variant['id']
+                    break  
+            else:
+                if variant.get('id', '').startswith("rs"):
+                    vep_data['id'] = variant['id']
+
+
     return vep_data
+
 
 # Code execution and export output in csv file
 if __name__ == '__main__':
@@ -123,4 +157,3 @@ if __name__ == '__main__':
         writer.writeheader()
         for row in full_data:
             writer.writerow(row)
-
